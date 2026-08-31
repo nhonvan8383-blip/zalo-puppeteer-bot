@@ -1,8 +1,6 @@
 const express = require('express');
 const puppeteer = require('puppeteer-core');
 const chromium = require('@sparticuz/chromium');
-const axios = require('axios');
-const FormData = require('form-data');
 
 const app = express();
 app.use(express.json({ limit: '10mb' }));
@@ -11,8 +9,8 @@ app.get('/', (req, res) => res.send('Server Puppeteer is running!'));
 
 app.post('/generate-and-send', async (req, res) => {
   const { htmlContent, chat_id, chatId, zaloToken } = req.body;
-  const targetChatId = chat_id || chatId || "a5b8109b37d5de8b87c4";
-  const targetToken  = zaloToken || "246763022207905113:hhXpfDhSXXjAFwzUrCpCiDkknvfYInOQFeFVfUTgInEfSMNgccNdRvDiYBzfZbkE";
+  const targetChatId = String(chat_id || chatId || "a5b8109b37d5de8b87c4").trim();
+  const targetToken  = String(zaloToken || "246763022207905113:hhXpfDhSXXjAFwzUrCpCiDkknvfYInOQFeFVfUTgInEfSMNgccNdRvDiYBzfZbkE").trim();
 
   if (!htmlContent) {
     return res.status(400).json({ error: 'Thiếu nội dung htmlContent' });
@@ -39,34 +37,30 @@ app.post('/generate-and-send', async (req, res) => {
 
     await browser.close();
 
-    // 2. Tạo FormData ép kiểu Buffer chuẩn cho Zalo API
+    // 2. Dùng FormData & Blob native của Node.js (Không bị lỗi header/boundary)
     const formData = new FormData();
-    formData.append('chat_id', String(targetChatId).trim());
-    formData.append('photo', imageBuffer, {
-      filename: 'report.png',
-      contentType: 'image/png',
-      knownLength: imageBuffer.length
+    formData.append('chat_id', targetChatId);
+    
+    // Đưa Buffer vào Blob chuẩn của Node.js
+    const imageBlob = new Blob([imageBuffer], { type: 'image/png' });
+    formData.append('photo', imageBlob, 'report.png');
+
+    // 3. Gửi sang Zalo API bằng fetch native
+    const zaloUrl = `https://bot-api.zaloplatforms.com/bot${targetToken}/sendPhoto`;
+    const response = await fetch(zaloUrl, {
+      method: 'POST',
+      body: formData
     });
 
-    // 3. Gửi sang Zalo API bằng Axios với boundary đầy đủ
-    const zaloUrl = `https://bot-api.zaloplatforms.com/bot${targetToken.trim()}/sendPhoto`;
-    const zaloRes = await axios.post(zaloUrl, formData, {
-      headers: {
-        ...formData.getHeaders(),
-        'Content-Length': formData.getLengthSync()
-      }
-    });
+    const zaloData = await response.json();
+    console.log("Zalo Response:", zaloData);
 
-    console.log("Zalo Response Success:", zaloRes.data);
-    return res.json({ success: true, data: zaloRes.data });
+    return res.json({ success: true, data: zaloData });
 
   } catch (err) {
     if (browser) await browser.close();
-    console.error('Lỗi Server:', err.response ? err.response.data : err.message);
-    return res.status(500).json({ 
-      error: err.message, 
-      details: err.response ? err.response.data : null 
-    });
+    console.error('Lỗi Server:', err.message);
+    return res.status(500).json({ error: err.message });
   }
 });
 
