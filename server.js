@@ -6,6 +6,8 @@ const FormData = require('form-data');
 const app = express();
 app.use(express.json({ limit: '10mb' }));
 
+app.get('/', (req, res) => res.send('Server Puppeteer is running!'));
+
 app.post('/generate-and-send', async (req, res) => {
   const { htmlContent, chatId, zaloToken } = req.body;
 
@@ -15,17 +17,22 @@ app.post('/generate-and-send', async (req, res) => {
 
   let browser;
   try {
+    // Khởi tạo browser với các tham số tối ưu cho Render
     browser = await puppeteer.launch({
       headless: 'new',
-      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--single-process',
+        '--no-zygote'
+      ]
     });
-    const page = await browser.newPage();
 
-    // Set màn hình chụp cho vừa khung báo cáo
+    const page = await browser.newPage();
     await page.setViewport({ width: 750, height: 100, deviceScaleFactor: 2 });
     await page.setContent(htmlContent, { waitUntil: 'networkidle0' });
 
-    // Chụp nguyên khung thẻ div có class .card
     const element = await page.$('.card');
     const imageBuffer = element 
       ? await element.screenshot({ type: 'png' })
@@ -33,7 +40,7 @@ app.post('/generate-and-send', async (req, res) => {
 
     await browser.close();
 
-    // Đẩy ảnh sang Zalo Bot API
+    // Gửi ảnh sang Zalo Bot
     const formData = new FormData();
     formData.append('chat_id', chatId);
     formData.append('photo', imageBuffer, { filename: 'report.png', contentType: 'image/png' });
