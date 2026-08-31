@@ -1,7 +1,7 @@
 const express = require('express');
 const puppeteer = require('puppeteer-core');
 const chromium = require('@sparticuz/chromium');
-const axios = require('axios');
+const fetch = require('node-fetch');
 const FormData = require('form-data');
 
 const app = express();
@@ -20,6 +20,7 @@ app.post('/generate-and-send', async (req, res) => {
 
   let browser;
   try {
+    // 1. Khởi tạo Puppeteer
     browser = await puppeteer.launch({
       args: chromium.args,
       defaultViewport: chromium.defaultViewport,
@@ -31,6 +32,7 @@ app.post('/generate-and-send', async (req, res) => {
     await page.setViewport({ width: 750, height: 100, deviceScaleFactor: 2 });
     await page.setContent(htmlContent, { waitUntil: 'networkidle0' });
 
+    // 2. Chụp ảnh thẻ báo cáo
     const element = await page.$('.card');
     const imageBuffer = element 
       ? await element.screenshot({ type: 'png' })
@@ -38,27 +40,30 @@ app.post('/generate-and-send', async (req, res) => {
 
     await browser.close();
 
-    // Khởi tạo FormData và truyền Buffer dưới dạng file stream chuẩn
+    // 3. Đóng gói FormData chuẩn cho Zalo Bot API
     const formData = new FormData();
     formData.append('chat_id', String(targetChatId).trim());
-    formData.append('photo', Buffer.from(imageBuffer), {
+    formData.append('photo', imageBuffer, {
       filename: 'report.png',
-      contentType: 'image/png',
-      knownLength: imageBuffer.length
+      contentType: 'image/png'
     });
 
+    // 4. Gửi bằng node-fetch
     const zaloUrl = `https://bot-api.zaloplatforms.com/bot${targetToken.trim()}/sendPhoto`;
-    const zaloRes = await axios.post(zaloUrl, formData, {
-      headers: {
-        ...formData.getHeaders()
-      }
+    const response = await fetch(zaloUrl, {
+      method: 'POST',
+      body: formData,
+      headers: formData.getHeaders()
     });
 
-    return res.json({ success: true, data: zaloRes.data });
+    const zaloData = await response.json();
+    console.log("Zalo Response:", zaloData);
+
+    return res.json({ success: true, data: zaloData });
 
   } catch (err) {
     if (browser) await browser.close();
-    console.error('Lỗi Render:', err.message);
+    console.error('Lỗi Render Server:', err.message);
     return res.status(500).json({ error: err.message });
   }
 });
