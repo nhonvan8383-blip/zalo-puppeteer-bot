@@ -10,15 +10,19 @@ app.use(express.json({ limit: '10mb' }));
 app.get('/', (req, res) => res.send('Server Puppeteer is running!'));
 
 app.post('/generate-and-send', async (req, res) => {
-  const { htmlContent, chatId, zaloToken } = req.body;
+  // Đọc linh hoạt cả chat_id và chatId từ Apps Script gửi sang
+  const { htmlContent, chat_id, chatId, zaloToken } = req.body;
+  
+  // Xác định ID người nhận (Ưu tiên chat_id -> chatId -> ID mặc định)
+  const targetChatId = chat_id || chatId || "a5b8109b37d5de8b87c4";
+  const targetToken  = zaloToken || "246763022207905113:hhXpfDhSXXjAFwzUrCpCiDkknvfYInOQFeFVfUTgInEfSMNgccNdRvDiYBzfZbkE";
 
-  if (!htmlContent || !chatId || !zaloToken) {
-    return res.status(400).json({ error: 'Thiếu dữ liệu htmlContent, chatId hoặc zaloToken' });
+  if (!htmlContent) {
+    return res.status(400).json({ error: 'Thiếu nội dung htmlContent' });
   }
 
   let browser;
   try {
-    // Khởi tạo browser siêu nhẹ và ổn định trên Server Render
     browser = await puppeteer.launch({
       args: chromium.args,
       defaultViewport: chromium.defaultViewport,
@@ -37,12 +41,12 @@ app.post('/generate-and-send', async (req, res) => {
 
     await browser.close();
 
-    // Gửi ảnh sang Zalo Bot API
+    // Chuẩn bị FormData gửi Zalo API với khóa bắt buộc là 'chat_id'
     const formData = new FormData();
-    formData.append('chat_id', chatId);
+    formData.append('chat_id', String(targetChatId).trim());
     formData.append('photo', imageBuffer, { filename: 'report.png', contentType: 'image/png' });
 
-    const zaloUrl = `https://bot-api.zaloplatforms.com/bot${zaloToken.trim()}/sendPhoto`;
+    const zaloUrl = `https://bot-api.zaloplatforms.com/bot${targetToken.trim()}/sendPhoto`;
     const zaloRes = await axios.post(zaloUrl, formData, {
       headers: formData.getHeaders()
     });
