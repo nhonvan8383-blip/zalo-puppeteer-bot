@@ -1,5 +1,6 @@
 const express = require('express');
-const puppeteer = require('puppeteer');
+const puppeteer = require('puppeteer-core');
+const chromium = require('@sparticuz/chromium');
 const axios = require('axios');
 const FormData = require('form-data');
 
@@ -17,16 +18,12 @@ app.post('/generate-and-send', async (req, res) => {
 
   let browser;
   try {
-    // Khởi tạo browser với các tham số tối ưu cho Render
+    // Khởi tạo browser siêu nhẹ và ổn định trên Server Render
     browser = await puppeteer.launch({
-      headless: 'new',
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--single-process',
-        '--no-zygote'
-      ]
+      args: chromium.args,
+      defaultViewport: chromium.defaultViewport,
+      executablePath: await chromium.executablePath(),
+      headless: chromium.headless
     });
 
     const page = await browser.newPage();
@@ -40,7 +37,7 @@ app.post('/generate-and-send', async (req, res) => {
 
     await browser.close();
 
-    // Gửi ảnh sang Zalo Bot
+    // Gửi ảnh sang Zalo Bot API
     const formData = new FormData();
     formData.append('chat_id', chatId);
     formData.append('photo', imageBuffer, { filename: 'report.png', contentType: 'image/png' });
