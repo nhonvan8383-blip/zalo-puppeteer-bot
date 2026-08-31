@@ -1,35 +1,13 @@
 const express = require('express');
 const puppeteer = require('puppeteer-core');
 const chromium = require('@sparticuz/chromium');
-const fetch = require('node-fetch');
+const axios = require('axios');
 const FormData = require('form-data');
 
 const app = express();
 app.use(express.json({ limit: '10mb' }));
 
 app.get('/', (req, res) => res.send('Server Puppeteer is running!'));
-
-// Hàm upload Buffer ảnh lên Imgur lấy URL công khai miễn phí
-async function uploadToImgur(imageBuffer) {
-  const formData = new FormData();
-  formData.append('image', imageBuffer.toString('base64'));
-  formData.append('type', 'base64');
-
-  const res = await fetch('https://api.imgur.com/3/image', {
-    method: 'POST',
-    headers: {
-      Authorization: 'Client-ID c9824619b0f4fd8' // Client ID ẩn danh miễn phí
-    },
-    body: formData
-  });
-
-  const data = await res.json();
-  if (data.success) {
-    return data.data.link;
-  } else {
-    throw new Error('Lỗi upload ảnh Imgur: ' + JSON.stringify(data));
-  }
-}
 
 app.post('/generate-and-send', async (req, res) => {
   const { htmlContent, chat_id, chatId, zaloToken } = req.body;
@@ -61,45 +39,34 @@ app.post('/generate-and-send', async (req, res) => {
 
     await browser.close();
 
-    // 2. Upload ảnh lên Cloud lấy URL
-    const imageUrl = await uploadToImgur(imageBuffer);
-    console.log("Image Uploaded URL:", imageUrl);
-
-    // 3. Gửi ảnh qua Zalo API bằng URL
-    const zaloUrl = `https://bot-api.zaloplatforms.com/bot${targetToken.trim()}/sendPhoto`;
-    
-    // Thử gửi dạng JSON Payload với đường dẫn URL ảnh (Chuẩn Zalo Platform)
-    let response = await fetch(zaloUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        chat_id: String(targetChatId).trim(),
-        photo: imageUrl
-      })
+    // 2. Tạo FormData ép kiểu Buffer chuẩn cho Zalo API
+    const formData = new FormData();
+    formData.append('chat_id', String(targetChatId).trim());
+    formData.append('photo', imageBuffer, {
+      filename: 'report.png',
+      contentType: 'image/png',
+      knownLength: imageBuffer.length
     });
 
-    let zaloData = await response.json();
+    // 3. Gửi sang Zalo API bằng Axios với boundary đầy đủ
+    const zaloUrl = `https://bot-api.zaloplatforms.com/bot${targetToken.trim()}/sendPhoto`;
+    const zaloRes = await axios.post(zaloUrl, formData, {
+      headers: {
+        ...formData.getHeaders(),
+        'Content-Length': formData.getLengthSync()
+      }
+    });
 
-    // Nếu Zalo trả về lỗi, thử lại bằng Multipart URL
-    if (!zaloData.ok) {
-      const formData = new FormData();
-      formData.append('chat_id', String(targetChatId).trim());
-      formData.append('photo', imageUrl);
-
-      response = await fetch(zaloUrl, {
-        method: 'POST',
-        body: formData,
-        headers: formData.getHeaders()
-      });
-      zaloData = await response.json();
-    }
-
-    return res.json({ success: true, imageUrl: imageUrl, data: zaloData });
+    console.log("Zalo Response Success:", zaloRes.data);
+    return res.json({ success: true, data: zaloRes.data });
 
   } catch (err) {
     if (browser) await browser.close();
-    console.error('Lỗi Server:', err.message);
-    return res.status(500).json({ error: err.message });
+    console.error('Lỗi Server:', err.response ? err.response.data : err.message);
+    return res.status(500).json({ 
+      error: err.message, 
+      details: err.response ? err.response.data : null 
+    });
   }
 });
 
